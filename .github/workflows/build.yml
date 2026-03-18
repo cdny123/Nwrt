@@ -48,6 +48,12 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    # 必须显式声明权限，否则 GITHUB_TOKEN 无法创建 Release
+    permissions:
+      contents: write      # 创建/删除 Release 和 Tag
+      actions: write       # 删除旧 Workflow 运行记录
+      packages: write      # 上传 artifacts
+
     steps:
     - name: 检出仓库代码
       uses: actions/checkout@v4
