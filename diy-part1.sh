@@ -15,8 +15,35 @@ echo "========================================"
 echo "[*] 克隆 luci-theme-kucat 主题..."
 git clone --depth=1 https://github.com/sirpdboy/luci-theme-kucat.git package/luci-theme-kucat
 
-echo "[*] 克隆 luci-app-quickstart 快速启动..."
+# -----------------------------------------------
+# luci-app-quickstart 版本号修复
+# openwrt-25.x 使用 APK 打包，版本号不能包含连字符(-)
+# 原版本 0.8.16-1 中的 "-1" 会导致 "package version is invalid"
+# 解决方案：克隆后修改 Makefile，将 PKG_RELEASE 合并进 PKG_VERSION
+# -----------------------------------------------
+echo "[*] 克隆 luci-app-quickstart（含版本号补丁）..."
 git clone --depth=1 https://github.com/lq-wq/luci-app-quickstart.git package/luci-app-quickstart
+
+# 修正版本号格式：将 PKG_VERSION + PKG_RELEASE 合并为单一无连字符版本
+# APK 规范要求版本号格式为 X.Y.Z，不允许带 -release 后缀
+MK="package/luci-app-quickstart/Makefile"
+if [ -f "$MK" ]; then
+  # 读取原始版本和 release
+  PKG_VER=$(grep -oP 'PKG_VERSION:=\K[^\s]+' "$MK" | head -1)
+  PKG_REL=$(grep -oP 'PKG_RELEASE:=\K[^\s]+' "$MK" | head -1)
+  if [ -n "$PKG_VER" ] && [ -n "$PKG_REL" ]; then
+    # 合并为 X.Y.Z.R 格式（全数字点分隔，APK 合法）
+    NEW_VER="${PKG_VER}.${PKG_REL}"
+    sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=${NEW_VER}/" "$MK"
+    sed -i "s/PKG_RELEASE:=.*/PKG_RELEASE:=0/" "$MK"
+    echo "[*] quickstart 版本号已修正: ${PKG_VER}-${PKG_REL} → ${NEW_VER}"
+  else
+    # 兜底：直接写死一个合法版本
+    sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=0.8.16/" "$MK"
+    sed -i "s/PKG_RELEASE:=.*/PKG_RELEASE:=0/" "$MK"
+    echo "[!] quickstart 版本号兜底修正为 0.8.16"
+  fi
+fi
 
 echo "[*] 克隆 luci-app-lucky..."
 git clone --depth=1 https://github.com/sirpdboy/luci-app-lucky.git package/lucky
@@ -31,7 +58,6 @@ git clone --depth=1 https://github.com/destan19/OpenAppFilter.git package/OpenAp
 # 添加 AdGuardHome 插件和核心
 # 编译固件时自动集成 AdGuardHome 及其核心二进制
 # -----------------------------------------------
-
 echo "[*] 克隆 luci-app-adguardhome..."
 git clone --depth=1 -b master https://github.com/rufengsuixing/luci-app-adguardhome.git package/luci-app-adguardhome
 
