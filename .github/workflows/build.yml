@@ -185,7 +185,6 @@ jobs:
         echo "" >> release.txt
         echo "### 内置插件" >> release.txt
         echo "- luci-theme-kucat (主题)" >> release.txt
-        echo "- luci-app-quickstart (快速启动)" >> release.txt
         echo "- luci-app-lucky" >> release.txt
         echo "- luci-app-partexp (分区扩容)" >> release.txt
         echo "- OpenAppFilter (应用过滤)" >> release.txt
