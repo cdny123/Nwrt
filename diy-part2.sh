@@ -9,6 +9,31 @@ echo "  DIY Part 2: 系统个性化配置"
 echo "========================================"
 
 # -----------------------------------------------
+# 批量修正所有第三方包的版本号（适配 APK 规范）
+# OpenWrt 25.x APK 不允许版本号含连字符(-)
+# 扫描 package/ 和 feeds/ 下所有 Makefile 并自动修正
+# -----------------------------------------------
+echo "[*] 批量修正第三方包版本号（APK 兼容）..."
+fix_apk_version() {
+  local mk="$1"
+  local ver
+  ver=$(grep -oP '^PKG_VERSION:=\K.+' "$mk" 2>/dev/null | head -1 | tr -d '[:space:]')
+  if echo "$ver" | grep -q '-'; then
+    local new_ver
+    new_ver=$(echo "$ver" | tr '-' '.')
+    sed -i "s|^PKG_VERSION:=.*|PKG_VERSION:=${new_ver}|" "$mk"
+    # PKG_RELEASE 统一清为 1，避免二次拼接出连字符
+    sed -i "s|^PKG_RELEASE:=.*|PKG_RELEASE:=1|" "$mk"
+    echo "  fixed: $(dirname $mk | xargs basename) ${ver} → ${new_ver}"
+  fi
+}
+export -f fix_apk_version
+find package/ feeds/ -name "Makefile" -not -path "*/\.git/*" 2>/dev/null \
+  | xargs -I{} bash -c 'fix_apk_version "$@"' _ {}
+echo "[✓] 版本号修正完成"
+
+
+# -----------------------------------------------
 # 网络配置：设置管理 IP 为 192.168.6.1
 # -----------------------------------------------
 echo "[*] 设置默认管理 IP: 192.168.6.1"
