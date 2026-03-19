@@ -191,7 +191,7 @@ CONFIG_PACKAGE_luci-app-opkg=y
 
 # 自定义插件
 CONFIG_PACKAGE_luci-theme-kucat=y
-# CONFIG_PACKAGE_luci-app-quickstart=y
+CONFIG_PACKAGE_luci-app-quickstart=y
 CONFIG_PACKAGE_luci-app-lucky=y
 CONFIG_PACKAGE_luci-app-partexp=y
 CONFIG_PACKAGE_luci-app-oaf=y
