@@ -1,17 +1,5 @@
 name: Build OpenWrt Firmware
 
-# ============================================================
-# Node.js 24 适配：必须在文件顶层 env 块声明，job 级无效
-# 参考：https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-# ============================================================
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  REPO_URL: https://github.com/openwrt/openwrt
-  UPLOAD_BIN_DIR: false
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
-  TZ: Asia/Shanghai
-
 on:
   repository_dispatch:
   workflow_dispatch:
@@ -37,15 +25,23 @@ on:
         required: false
         default: 'false'
         type: boolean
-      clean_build:
-        description: '清理构建缓存（全新编译）'
-        required: false
-        default: 'false'
-        type: boolean
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+
+    # ----------------------------------------------------------------
+    # Node.js 24 适配：env 必须在 job 级别，顶层 env 对 runner 无效
+    # 参考：https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+    # ----------------------------------------------------------------
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      REPO_URL: https://github.com/openwrt/openwrt
+      REPO_BRANCH: ${{ github.event.inputs.branch || 'openwrt-25.12' }}
+      TARGET: ${{ github.event.inputs.target || 'x86-64' }}
+      UPLOAD_FIRMWARE: true
+      UPLOAD_RELEASE: true
+      TZ: Asia/Shanghai
 
     permissions:
       contents: write
@@ -56,38 +52,32 @@ jobs:
     - name: 检出仓库代码
       uses: actions/checkout@v4
 
-    - name: 设置并验证编译参数
+    - name: 校验配置文件并设置路径
       run: |
-        REPO_BRANCH="${{ github.event.inputs.branch || 'openwrt-25.12' }}"
-        TARGET="${{ github.event.inputs.target || 'x86-64' }}"
-        # dot.config 是 .config 的明文副本，彻底避免隐藏文件被 git 忽略的问题
         CONFIG_FILE="configs/${TARGET}/dot.config"
         FEEDS_CONF="configs/${TARGET}/feeds.conf.default"
 
-        echo "REPO_BRANCH=${REPO_BRANCH}" >> $GITHUB_ENV
-        echo "TARGET=${TARGET}"           >> $GITHUB_ENV
         echo "CONFIG_FILE=${CONFIG_FILE}" >> $GITHUB_ENV
         echo "FEEDS_CONF=${FEEDS_CONF}"   >> $GITHUB_ENV
 
-        echo "========== 本次编译参数 =========="
-        echo "  分支  : ${REPO_BRANCH}"
-        echo "  架构  : ${TARGET}"
-        echo "  配置  : ${CONFIG_FILE}"
-        echo "  Feeds : ${FEEDS_CONF}"
-        echo "===================================="
+        echo "=============================="
+        echo " 架构 : ${TARGET}"
+        echo " 分支 : ${REPO_BRANCH}"
+        echo " 配置 : ${CONFIG_FILE}"
+        echo "=============================="
 
-        # 强制校验配置文件存在，缺失则立即报错
+        # 配置文件不存在则立刻报错，明确告知
         if [ ! -f "${CONFIG_FILE}" ]; then
-          echo "::error::❌ 未找到 ${CONFIG_FILE}！"
-          echo "当前 configs/ 目录结构："
+          echo "::error::找不到配置文件 ${CONFIG_FILE}"
+          echo "configs/ 现有文件："
           find configs/ | sort
           exit 1
         fi
 
-        echo "--- 配置文件目标平台验证 ---"
-        grep '^CONFIG_TARGET' "${CONFIG_FILE}" | head -5
-        echo "----------------------------"
-        echo "::notice::✅ 配置文件验证通过"
+        echo "::notice::配置文件验证通过"
+        echo "--- 目标平台 ---"
+        grep '^CONFIG_TARGET' "${CONFIG_FILE}"
+        echo "----------------"
 
     - name: 初始化编译环境
       env:
@@ -97,13 +87,14 @@ jobs:
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install \
           ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib \
-          g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev \
-          libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
-          libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs \
-          msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools \
-          python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo \
-          uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext \
+          gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 \
+          libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev \
+          libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
+          libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch \
+          pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons \
+          squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto \
+          xxd zlib1g-dev
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -117,86 +108,70 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: 加载自定义 Feeds 并运行 diy-part1.sh
+    - name: 加载自定义 Feeds + 运行 diy-part1.sh
       run: |
         if [ -f "$FEEDS_CONF" ]; then
           cp "$FEEDS_CONF" openwrt/feeds.conf.default
-          echo "[✓] 已加载 $FEEDS_CONF"
-        else
-          echo "[!] 未找到自定义 feeds，使用上游默认"
+          echo "[✓] 已载入 $FEEDS_CONF"
         fi
         chmod +x diy-part1.sh
-        cd openwrt
-        $GITHUB_WORKSPACE/diy-part1.sh
+        cd openwrt && $GITHUB_WORKSPACE/diy-part1.sh
 
     - name: 更新并安装 Feeds
-      run: |
-        cd openwrt
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
-    - name: 加载 dot.config 并运行 diy-part2.sh
+    - name: 载入 dot.config + 运行 diy-part2.sh
       run: |
-        echo "[*] 复制 $CONFIG_FILE → openwrt/.config"
+        echo "[*] 复制 $CONFIG_FILE => openwrt/.config"
         cp "$CONFIG_FILE" openwrt/.config
 
-        echo "--- 复制后目标平台确认 ---"
-        grep '^CONFIG_TARGET' openwrt/.config | head -5
-        echo "--------------------------"
+        echo "--- 载入后目标平台 ---"
+        grep '^CONFIG_TARGET' openwrt/.config
+        echo "----------------------"
 
         chmod +x diy-part2.sh
-        cd openwrt
-        $GITHUB_WORKSPACE/diy-part2.sh
+        cd openwrt && $GITHUB_WORKSPACE/diy-part2.sh
 
         echo "--- diy-part2 执行后目标平台 ---"
-        grep '^CONFIG_TARGET' .config | head -5
+        grep '^CONFIG_TARGET' openwrt/.config
         echo "--------------------------------"
 
-    - name: 启用 SSH 调试
+    - name: SSH 远程调试
       uses: mxschmitt/action-tmate@v3
-      if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
+      if: github.event.inputs.ssh == 'true'
 
-    - name: 下载编译所需软件包
-      id: package
+    - name: 下载软件包
       run: |
         cd openwrt
         make defconfig
+
         echo "--- make defconfig 后目标平台 ---"
-        grep '^CONFIG_TARGET' .config | head -5
+        grep '^CONFIG_TARGET' .config
         echo "---------------------------------"
+
         make download -j8
-        find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
     - name: 编译固件
       id: compile
       run: |
         cd openwrt
-        echo "$(nproc) 线程并行编译"
+        echo "使用 $(nproc) 线程编译"
         make -j$(nproc) || make -j1 V=s 2>&1 | tee /tmp/build.log
         echo "status=success" >> $GITHUB_OUTPUT
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+        grep '^CONFIG_TARGET.*DEVICE.*=y' .config \
+          | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        [ -s DEVICE_NAME ] \
+          && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-    - name: 上传编译错误日志（仅失败时）
+    - name: 上传错误日志（仅编译失败时）
       if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: build-error-log
         path: /tmp/build.log
         retention-days: 3
-
-    - name: 检查磁盘使用情况
-      if: (!cancelled())
-      run: df -hT
-
-    - name: 上传 bin 目录
-      uses: actions/upload-artifact@v4
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-      with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: openwrt/bin
 
     - name: 整理固件文件
       id: organize
@@ -207,49 +182,43 @@ jobs:
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 上传固件
+    - name: 上传固件 Artifact
       uses: actions/upload-artifact@v4
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
-    - name: 生成 Release 标签
+    - name: 生成 Release 说明
       id: tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        touch release.txt
-        echo "## OpenWrt 固件信息" >> release.txt
-        echo "- 编译分支: $REPO_BRANCH" >> release.txt
-        echo "- 设备架构: $TARGET" >> release.txt
-        echo "- 编译时间: $(TZ=UTC-8 date '+%Y-%m-%d %H:%M:%S')" >> release.txt
-        echo "- 内核版本: 6.6" >> release.txt
-        echo "- 管理地址: 192.168.6.1" >> release.txt
-        echo "- 默认用户: root (无密码)" >> release.txt
-        echo "" >> release.txt
-        echo "### 内置插件" >> release.txt
-        echo "- luci-theme-kucat (主题)" >> release.txt
-        echo "- luci-app-quickstart (快速启动)" >> release.txt
-        echo "- luci-app-lucky" >> release.txt
-        echo "- luci-app-partexp (分区扩容)" >> release.txt
-        echo "- OpenAppFilter (应用过滤)" >> release.txt
-        echo "- AdGuardHome (广告过滤)" >> release.txt
-        echo "- OpenClash (代理)" >> release.txt
-        echo "- luci-app-netdata (系统监控)" >> release.txt
+        cat > release.txt << EOF
+        ## OpenWrt 固件信息
+        - **编译分支**: $REPO_BRANCH
+        - **设备架构**: $TARGET
+        - **编译时间**: $(TZ=UTC-8 date '+%Y-%m-%d %H:%M:%S')
+        - **内核版本**: 6.6
+        - **管理地址**: 192.168.6.1
+        - **默认账户**: root（无密码）
+
+        ### 内置插件
+        luci-theme-kucat · luci-app-quickstart · luci-app-lucky · luci-app-partexp · OpenAppFilter · AdGuardHome · OpenClash · luci-app-netdata
+        EOF
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 发布 Release
       uses: softprops/action-gh-release@v2
       if: steps.tag.outputs.status == 'success' && !cancelled()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
         files: ${{ env.FIRMWARE }}/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: 删除旧的 Workflow 运行记录
+    - name: 删除旧 Workflow 记录
       uses: Mattraks/delete-workflow-runs@v2
       with:
         token: ${{ github.token }}
@@ -257,9 +226,9 @@ jobs:
         retain_days: 1
         keep_minimum_runs: 3
 
-    - name: 删除旧的 Release
-      uses: dev-drprasad/delete-older-releases@v0.3.4
+    - name: 删除旧 Release
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      uses: dev-drprasad/delete-older-releases@v0.3.4
       with:
         keep_latest: 3
         delete_tags: true
