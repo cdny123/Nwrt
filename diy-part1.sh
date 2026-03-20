@@ -48,9 +48,9 @@ echo "[*] 克隆 luci-theme-kucat 主题..."
 git clone --depth=1 https://github.com/sirpdboy/luci-theme-kucat.git package/luci-theme-kucat
 fix_pkg_version package/luci-theme-kucat
 
-echo "[*] 克隆 luci-app-quickstart..."
-git clone --depth=1 https://github.com/lq-wq/luci-app-quickstart.git package/luci-app-quickstart
-fix_pkg_version package/luci-app-quickstart
+# echo "[*] 克隆 luci-app-quickstart..."
+# git clone --depth=1 https://github.com/lq-wq/luci-app-quickstart.git package/luci-app-quickstart
+# fix_pkg_version package/luci-app-quickstart
 
 echo "[*] 克隆 luci-app-lucky..."
 git clone --depth=1 https://github.com/sirpdboy/luci-app-lucky.git package/lucky
