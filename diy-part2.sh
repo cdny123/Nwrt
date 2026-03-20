@@ -168,7 +168,7 @@ FW_END
 echo "[*] 写入插件选项..."
 cat >> .config << 'PKG2_END'
 CONFIG_PACKAGE_luci-theme-kucat=y
-CONFIG_PACKAGE_luci-app-quickstart=y
+# CONFIG_PACKAGE_luci-app-quickstart=y
 CONFIG_PACKAGE_luci-app-lucky=y
 CONFIG_PACKAGE_luci-app-partexp=y
 CONFIG_PACKAGE_luci-app-oaf=y
