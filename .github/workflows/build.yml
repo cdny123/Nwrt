@@ -30,10 +30,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
-    # ----------------------------------------------------------------
-    # Node.js 24 适配：env 必须在 job 级别，顶层 env 对 runner 无效
-    # 参考：https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-    # ----------------------------------------------------------------
+    # Node.js 24 适配：必须在 job 级 env 下才对 runner 生效
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       REPO_URL: https://github.com/openwrt/openwrt
@@ -56,28 +53,21 @@ jobs:
       run: |
         CONFIG_FILE="configs/${TARGET}/dot.config"
         FEEDS_CONF="configs/${TARGET}/feeds.conf.default"
-
         echo "CONFIG_FILE=${CONFIG_FILE}" >> $GITHUB_ENV
         echo "FEEDS_CONF=${FEEDS_CONF}"   >> $GITHUB_ENV
-
         echo "=============================="
         echo " 架构 : ${TARGET}"
         echo " 分支 : ${REPO_BRANCH}"
         echo " 配置 : ${CONFIG_FILE}"
         echo "=============================="
-
-        # 配置文件不存在则立刻报错，明确告知
         if [ ! -f "${CONFIG_FILE}" ]; then
           echo "::error::找不到配置文件 ${CONFIG_FILE}"
-          echo "configs/ 现有文件："
           find configs/ | sort
           exit 1
         fi
-
-        echo "::notice::配置文件验证通过"
-        echo "--- 目标平台 ---"
+        echo "--- 目标平台预览 ---"
         grep '^CONFIG_TARGET' "${CONFIG_FILE}"
-        echo "----------------"
+        echo "--------------------"
 
     - name: 初始化编译环境
       env:
@@ -125,15 +115,18 @@ jobs:
         echo "[*] 复制 $CONFIG_FILE => openwrt/.config"
         cp "$CONFIG_FILE" openwrt/.config
 
+        # 验证复制成功，路径相对于 GITHUB_WORKSPACE（不是 openwrt/）
         echo "--- 载入后目标平台 ---"
         grep '^CONFIG_TARGET' openwrt/.config
         echo "----------------------"
 
         chmod +x diy-part2.sh
+        # diy-part2.sh 在 openwrt/ 目录内执行，脚本内所有路径都是相对 openwrt/
         cd openwrt && $GITHUB_WORKSPACE/diy-part2.sh
 
+        # 验证：cd 到 openwrt/ 后检查 .config（不加 openwrt/ 前缀）
         echo "--- diy-part2 执行后目标平台 ---"
-        grep '^CONFIG_TARGET' openwrt/.config
+        cd openwrt && grep '^CONFIG_TARGET' .config
         echo "--------------------------------"
 
     - name: SSH 远程调试
@@ -144,11 +137,9 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-
         echo "--- make defconfig 后目标平台 ---"
         grep '^CONFIG_TARGET' .config
         echo "---------------------------------"
-
         make download -j8
         find dl -size -1024c -exec rm -f {} \;
 
@@ -157,8 +148,14 @@ jobs:
       run: |
         cd openwrt
         echo "使用 $(nproc) 线程编译"
-        make -j$(nproc) || make -j1 V=s 2>&1 | tee /tmp/build.log
-        echo "status=success" >> $GITHUB_OUTPUT
+        if make -j$(nproc); then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "多线程编译失败，切换单线程详细模式..."
+          make -j1 V=s 2>&1 | tee /tmp/build.log
+          # 单线程也成功才算 success
+          echo "status=success" >> $GITHUB_OUTPUT
+        fi
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config \
           | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] \
@@ -173,14 +170,42 @@ jobs:
         path: /tmp/build.log
         retention-days: 3
 
+    - name: 检查固件产物
+      if: '!cancelled()'
+      run: |
+        echo "=== bin/targets 目录结构 ==="
+        find openwrt/bin/targets -type f 2>/dev/null | sort || echo "（目录为空）"
+        echo "============================="
+
     - name: 整理固件文件
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        # 找到实际的 targets 子目录（不依赖 glob，防止路径不存在）
+        TARGETS_DIR=$(find openwrt/bin/targets -mindepth 2 -maxdepth 2 -type d | head -1)
+        if [ -z "$TARGETS_DIR" ]; then
+          echo "::error::未找到固件输出目录 openwrt/bin/targets/*/*"
+          find openwrt/bin -type f 2>/dev/null | sort
+          exit 1
+        fi
+        echo "固件目录: $TARGETS_DIR"
+        # 删除 packages 子目录，只保留固件文件
+        rm -rf "$TARGETS_DIR/packages"
+        # 过滤掉非固件文件（排除 swapfile 等系统文件）
+        find "$TARGETS_DIR" -maxdepth 1 -type f | while read f; do
+          case "$f" in
+            *.bin|*.img|*.img.gz|*.vmdk|*.iso|*.gz|*.sha256sums|*.manifest|*.json)
+              echo "保留: $f" ;;
+            *)
+              echo "跳过: $f"
+              rm -f "$f" ;;
+          esac
+        done
+        echo "FIRMWARE=$TARGETS_DIR" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
+        echo "=== 最终固件列表 ==="
+        ls -lh "$TARGETS_DIR"
+        echo "===================="
 
     - name: 上传固件 Artifact
       uses: actions/upload-artifact@v4
@@ -191,21 +216,21 @@ jobs:
 
     - name: 生成 Release 说明
       id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        cat > release.txt << EOF
-        ## OpenWrt 固件信息
-        - **编译分支**: $REPO_BRANCH
-        - **设备架构**: $TARGET
-        - **编译时间**: $(TZ=UTC-8 date '+%Y-%m-%d %H:%M:%S')
-        - **内核版本**: 6.6
-        - **管理地址**: 192.168.6.1
-        - **默认账户**: root（无密码）
+        cat > release.txt << REOF
+## OpenWrt 固件信息
+- **编译分支**: ${REPO_BRANCH}
+- **设备架构**: ${TARGET}
+- **编译时间**: $(TZ=UTC-8 date '+%Y-%m-%d %H:%M:%S')
+- **内核版本**: 6.6
+- **管理地址**: 192.168.6.1
+- **默认账户**: root（无密码）
 
-        ### 内置插件
-        luci-theme-kucat · luci-app-quickstart · luci-app-lucky · luci-app-partexp · OpenAppFilter · AdGuardHome · OpenClash · luci-app-netdata
-        EOF
+### 内置插件
+luci-theme-kucat · luci-app-quickstart · luci-app-lucky · luci-app-partexp · OpenAppFilter · AdGuardHome · OpenClash · luci-app-netdata
+REOF
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 发布 Release
@@ -214,7 +239,15 @@ jobs:
       with:
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
-        files: ${{ env.FIRMWARE }}/*
+        # 用精确的文件扩展名通配，彻底排除 swapfile 等非固件文件
+        files: |
+          ${{ env.FIRMWARE }}/*.bin
+          ${{ env.FIRMWARE }}/*.img
+          ${{ env.FIRMWARE }}/*.img.gz
+          ${{ env.FIRMWARE }}/*.vmdk
+          ${{ env.FIRMWARE }}/*.iso
+          ${{ env.FIRMWARE }}/*.gz
+          ${{ env.FIRMWARE }}/*.sha256sums
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
