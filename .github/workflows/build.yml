@@ -234,7 +234,7 @@ jobs:
           echo "- 默认账户: root 无密码"
           echo ""
           echo "### 内置插件"
-          echo "luci-theme-kucat / luci-app-quickstart / luci-app-lucky"
+          echo "luci-theme-kucat / luci-app-lucky"
           echo "luci-app-partexp / OpenAppFilter / AdGuardHome"
           echo "OpenClash / luci-app-netdata"
         } > release.txt
