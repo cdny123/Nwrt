@@ -5,6 +5,13 @@
 #
 
 set -e
+
+# 如果传入了目录参数，切换到该目录（workflow 传入 openwrt 目录）
+if [ -n "$1" ] && [ -d "$1" ]; then
+  cd "$1"
+  echo "[*] 工作目录切换至: $(pwd)"
+fi
+
 echo "========================================"
 echo "  DIY Part 1: 添加自定义插件和 Feeds"
 echo "========================================"
@@ -47,10 +54,6 @@ fix_pkg_version() {
 echo "[*] 克隆 luci-theme-kucat 主题..."
 git clone --depth=1 https://github.com/sirpdboy/luci-theme-kucat.git package/luci-theme-kucat
 fix_pkg_version package/luci-theme-kucat
-
-# echo "[*] 克隆 luci-app-quickstart..."
-# git clone --depth=1 https://github.com/lq-wq/luci-app-quickstart.git package/luci-app-quickstart
-# fix_pkg_version package/luci-app-quickstart
 
 echo "[*] 克隆 luci-app-lucky..."
 git clone --depth=1 https://github.com/sirpdboy/luci-app-lucky.git package/lucky
