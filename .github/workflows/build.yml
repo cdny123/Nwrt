@@ -37,8 +37,8 @@ jobs:
 
     env:
       # softprops/action-gh-release、Mattraks/delete-workflow-runs、
-      # dev-drprasad/delete-older-releases 三个 action 尚未发布 node24 版本，
-      # 唯一解法是在 job 级 env 设置此变量强制使用 node24 并消除警告
+      # dev-drprasad/delete-older-releases 尚无 node24 版本，
+      # 此变量是官方推荐的唯一解法，必须放在 job 级 env 下生效
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       REPO_URL: https://github.com/openwrt/openwrt
       REPO_BRANCH: ${{ github.event.inputs.branch || 'openwrt-25.12' }}
@@ -49,25 +49,41 @@ jobs:
     - name: 检出仓库代码
       uses: actions/checkout@v5
 
-    - name: 校验配置文件
+    - name: 校验配置文件并写入环境变量
       run: |
         CONFIG_FILE="configs/${TARGET}/dot.config"
         FEEDS_CONF="configs/${TARGET}/feeds.conf.default"
-        echo "CONFIG_FILE=${CONFIG_FILE}" >> $GITHUB_ENV
-        echo "FEEDS_CONF=${FEEDS_CONF}"   >> $GITHUB_ENV
+
+        # 写入后续步骤使用的环境变量（带引号，防止路径含空格）
+        echo "CONFIG_FILE=${CONFIG_FILE}" >> "$GITHUB_ENV"
+        echo "FEEDS_CONF=${FEEDS_CONF}"   >> "$GITHUB_ENV"
+
         echo "=============================="
         echo " 架构 : ${TARGET}"
         echo " 分支 : ${REPO_BRANCH}"
         echo " 配置 : ${CONFIG_FILE}"
         echo "=============================="
+
+        # 验证 dot.config 必须存在
         if [ ! -f "${CONFIG_FILE}" ]; then
           echo "::error::找不到 ${CONFIG_FILE}"
+          echo "configs/ 现有文件："
           find configs/ | sort
           exit 1
         fi
+
+        # 验证 feeds.conf.default 必须存在
+        if [ ! -f "${FEEDS_CONF}" ]; then
+          echo "::error::找不到 ${FEEDS_CONF}"
+          echo "configs/ 现有文件："
+          find configs/ | sort
+          exit 1
+        fi
+
         echo "--- dot.config 目标平台 ---"
         grep '^CONFIG_TARGET' "${CONFIG_FILE}"
         echo "---------------------------"
+        echo "::notice::配置文件验证通过"
 
     - name: 初始化编译环境
       env:
@@ -103,36 +119,39 @@ jobs:
 
     - name: 加载 Feeds + 运行 diy-part1.sh
       run: |
-        if [ -f "$FEEDS_CONF" ]; then
-          cp "$FEEDS_CONF" openwrt/feeds.conf.default
-          echo "[✓] 已载入 $FEEDS_CONF"
-        fi
+        # feeds.conf.default 已在上一步验证存在，直接复制
+        cp "$FEEDS_CONF" openwrt/feeds.conf.default
+        echo "[✓] 已载入 $FEEDS_CONF"
         chmod +x diy-part1.sh
-        cd openwrt && $GITHUB_WORKSPACE/diy-part1.sh
+        # 用绝对路径调用脚本，避免 cd 后路径混乱
+        /bin/bash diy-part1.sh openwrt
 
     - name: 更新并安装 Feeds
-      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+      working-directory: /workdir/openwrt
+      run: |
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
 
     - name: 载入 dot.config + 运行 diy-part2.sh
+      working-directory: /workdir/openwrt
       run: |
-        cp "$CONFIG_FILE" openwrt/.config
+        cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
         echo "--- 载入后目标平台 ---"
-        grep '^CONFIG_TARGET' openwrt/.config
-        echo "----------------------"
-        chmod +x diy-part2.sh
-        cd openwrt && $GITHUB_WORKSPACE/diy-part2.sh
-        echo "--- diy-part2 执行后 ---"
-        # 注意：cd openwrt 后当前目录已是 openwrt/，直接用 .config 不加前缀
         grep '^CONFIG_TARGET' .config
-        echo "------------------------"
+        echo "----------------------"
+        chmod +x "$GITHUB_WORKSPACE/diy-part2.sh"
+        /bin/bash "$GITHUB_WORKSPACE/diy-part2.sh"
+        echo "--- diy-part2 执行后目标平台 ---"
+        grep '^CONFIG_TARGET' .config
+        echo "--------------------------------"
 
     - name: SSH 远程调试
       uses: mxschmitt/action-tmate@v3
       if: github.event.inputs.ssh == 'true'
 
     - name: 下载软件包
+      working-directory: /workdir/openwrt
       run: |
-        cd openwrt
         make defconfig
         echo "--- defconfig 后目标平台 ---"
         grep '^CONFIG_TARGET' .config
@@ -142,8 +161,8 @@ jobs:
 
     - name: 编译固件
       id: compile
+      working-directory: /workdir/openwrt
       run: |
-        cd openwrt
         echo "使用 $(nproc) 线程编译"
         if make -j$(nproc); then
           echo "多线程编译成功"
@@ -154,7 +173,7 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
         echo "FILE_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
-    - name: 上传编译错误日志
+    - name: 上传编译错误日志（仅失败时）
       if: failure()
       uses: actions/upload-artifact@v6
       with:
@@ -178,21 +197,21 @@ jobs:
           exit 1
         fi
 
-        echo "固件目录: $TARGETS_DIR"
+        echo "固件目录（绝对路径）: $TARGETS_DIR"
         rm -rf "$TARGETS_DIR/packages"
 
-        # 只保留固件文件，排除 swapfile 等系统文件
-        find "$TARGETS_DIR" -maxdepth 1 -type f | while read f; do
+        # 只保留固件相关文件，排除 swapfile 等系统文件
+        find "$TARGETS_DIR" -maxdepth 1 -type f | while read -r f; do
           case "$f" in
             *.bin|*.img|*.img.gz|*.vmdk|*.iso|*.gz|*.sha256sums|*.manifest|*.json)
-              echo "  保留: $(basename $f)" ;;
+              echo "  保留: $(basename "$f")" ;;
             *)
-              echo "  移除: $(basename $f)"
+              echo "  移除: $(basename "$f")"
               rm -f "$f" ;;
           esac
         done
 
-        echo "FIRMWARE=$TARGETS_DIR" >> $GITHUB_ENV
+        echo "FIRMWARE=$TARGETS_DIR" >> "$GITHUB_ENV"
         echo "status=success" >> $GITHUB_OUTPUT
         echo "=== 最终固件列表 ==="
         ls -lh "$TARGETS_DIR"
@@ -220,9 +239,9 @@ jobs:
           echo "- 默认账户: root 无密码"
           echo ""
           echo "### 内置插件"
-          echo "luci-theme-kucat / luci-app-quickstart / luci-app-lucky"
+          echo "luci-theme-kucat / luci-app-netdata / luci-app-lucky"
           echo "luci-app-partexp / OpenAppFilter / AdGuardHome"
-          echo "OpenClash / luci-app-netdata"
+          echo "OpenClash"
         } > release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
