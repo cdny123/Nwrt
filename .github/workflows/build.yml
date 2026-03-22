@@ -122,7 +122,8 @@ jobs:
         chmod +x diy-part2.sh
         cd openwrt && $GITHUB_WORKSPACE/diy-part2.sh
         echo "--- diy-part2 执行后 ---"
-        grep '^CONFIG_TARGET' openwrt/.config
+        # 注意：cd openwrt 后当前目录已是 openwrt/，直接用 .config 不加前缀
+        grep '^CONFIG_TARGET' .config
         echo "------------------------"
 
     - name: SSH 远程调试
@@ -219,9 +220,9 @@ jobs:
           echo "- 默认账户: root 无密码"
           echo ""
           echo "### 内置插件"
-          echo "luci-theme-kucat / luci-app-netdata / luci-app-lucky"
+          echo "luci-theme-kucat / luci-app-quickstart / luci-app-lucky"
           echo "luci-app-partexp / OpenAppFilter / AdGuardHome"
-          echo "OpenClash"
+          echo "OpenClash / luci-app-netdata"
         } > release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
