@@ -156,12 +156,16 @@ jobs:
       working-directory: /workdir/openwrt
       run: |
         echo "使用 $(nproc) 线程编译"
-        # 多线程编译，失败时用单线程+详细日志重试
-        # 注意：make -j1 失败时要让整个步骤失败（不用 || true）
-        if ! make -j$(nproc) 2>&1; then
-          echo "::warning::多线程编译失败，切换单线程详细模式..."
+        # 第一轮：多线程快速编译
+        if make -j$(nproc) 2>&1; then
+          echo "::notice::多线程编译成功"
+        else
+          echo "::warning::多线程编译失败，切换单线程详细模式（错误会直接显示在日志中）..."
+          # 第二轮：单线程，输出完整日志到 Actions 控制台
+          # 同时保存到文件供上传
+          set -o pipefail
           make -j1 V=s 2>&1 | tee /tmp/build.log
-          # 如果单线程也失败，退出码非0，步骤自动标记失败
+          # pipefail 确保 make 失败时整个管道退出码非0，步骤自动标记 failure
         fi
         echo "FILE_DATE=$(date +'%Y%m%d%H%M')" >> "$GITHUB_ENV"
         echo "status=success" >> "$GITHUB_OUTPUT"
