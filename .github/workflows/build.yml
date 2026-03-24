@@ -137,9 +137,33 @@ jobs:
         grep '^CONFIG_TARGET' .config
         echo "--------------------------------"
 
-    - name: SSH 远程调试
+        - name: SSH 远程调试（导入 GitHub 公钥）
+      if: github.event.inputs.ssh == 'true'
+      run: |
+        # 从 GitHub 获取账户的 SSH 公钥并加入授权列表
+        # 将下面的 YOUR_GITHUB_USERNAME 替换为你的 GitHub 用户名
+        GITHUB_USER=$(echo "$GITHUB_REPOSITORY" | cut -d'/' -f1)
+        echo "[*] 正在导入 GitHub 用户 ${GITHUB_USER} 的 SSH 公钥..."
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        # 从 GitHub API 获取公钥
+        curl -fsSL "https://github.com/${GITHUB_USER}.keys"           -o /tmp/github_keys.txt 2>/dev/null || true
+        if [ -s /tmp/github_keys.txt ]; then
+          cat /tmp/github_keys.txt >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+          echo "[✓] 已导入 $(wc -l < /tmp/github_keys.txt) 个公钥"
+          cat /tmp/github_keys.txt
+        else
+          echo "::warning::未找到 ${GITHUB_USER} 的 SSH 公钥"
+          echo "请先在 GitHub 账号设置中添加 SSH 公钥："
+          echo "https://github.com/settings/keys"
+        fi
+
+    - name: 启动 tmate SSH 会话
       uses: mxschmitt/action-tmate@v3
       if: github.event.inputs.ssh == 'true'
+      with:
+        limit-access-to-actor: true
 
     - name: 下载软件包
       working-directory: /workdir/openwrt
@@ -199,13 +223,18 @@ jobs:
         echo "固件目录: $TARGETS_DIR"
         rm -rf "$TARGETS_DIR/packages"
 
-        # 只保留固件文件，排除 swapfile 等系统文件
+        # 只保留 squashfs-combined 系列（4个文件），其余全部删除
+        # 保留：openwrt-x86-64-generic-squashfs-combined*.img
+        #        openwrt-x86-64-generic-squashfs-combined*.img.gz
+        #        openwrt-x86-64-generic-squashfs-combined*-efi.img
+        #        openwrt-x86-64-generic-squashfs-combined*-efi.img.gz
         find "$TARGETS_DIR" -maxdepth 1 -type f | while read -r f; do
-          case "$f" in
-            *.bin|*.img|*.img.gz|*.vmdk|*.iso|*.gz|*.sha256sums|*.manifest|*.json)
-              echo "  保留: $(basename "$f")" ;;
+          fname=$(basename "$f")
+          case "$fname" in
+            *squashfs-combined*)
+              echo "  保留: $fname" ;;
             *)
-              echo "  移除: $(basename "$f")"
+              echo "  移除: $fname"
               rm -f "$f" ;;
           esac
         done
@@ -238,9 +267,9 @@ jobs:
           echo "- 默认账户: root 无密码"
           echo ""
           echo "### 内置插件"
-          echo "luci-theme-kucat / luci-app-lucky"
+          echo "luci-theme-kucat / luci-app-netdata / luci-app-lucky"
           echo "luci-app-partexp / OpenAppFilter / AdGuardHome"
-          echo "OpenClash / luci-app-netdata"
+          echo "OpenClash"
         } > release.txt
         echo "status=success" >> "$GITHUB_OUTPUT"
 
@@ -251,12 +280,7 @@ jobs:
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
         files: |
-          ${{ env.FIRMWARE }}/*.bin
-          ${{ env.FIRMWARE }}/*.img
-          ${{ env.FIRMWARE }}/*.img.gz
-          ${{ env.FIRMWARE }}/*.vmdk
-          ${{ env.FIRMWARE }}/*.gz
-          ${{ env.FIRMWARE }}/*.sha256sums
+          ${{ env.FIRMWARE }}/*squashfs-combined*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
