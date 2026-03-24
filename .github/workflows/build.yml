@@ -143,11 +143,11 @@ jobs:
         # 从 GitHub 获取账户的 SSH 公钥并加入授权列表
         # 将下面的 YOUR_GITHUB_USERNAME 替换为你的 GitHub 用户名
         GITHUB_USER=$(echo "$GITHUB_REPOSITORY" | cut -d'/' -f1)
-        echo "[*] 正在导入 GitHub 用户 ${GITHUB_USER} 的 SSH 公钥..."
+        echo "[*] 正在导入 GitHub 用户 cdny123 的 SSH 公钥..."
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
         # 从 GitHub API 获取公钥
-        curl -fsSL "https://github.com/${GITHUB_USER}.keys"           -o /tmp/github_keys.txt 2>/dev/null || true
+        curl -fsSL "https://github.com/cdny123.keys"           -o /tmp/github_keys.txt 2>/dev/null || true
         if [ -s /tmp/github_keys.txt ]; then
           cat /tmp/github_keys.txt >> ~/.ssh/authorized_keys
           chmod 600 ~/.ssh/authorized_keys
