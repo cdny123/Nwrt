@@ -27,3 +27,6 @@ src-git adguardhome https://github.com/rufengsuixing/luci-app-adguardhome.git
 
 # OpenClash 代理客户端
 src-git openclash https://github.com/vernesong/OpenClash.git
+
+# istore 软件市场 
+src-git store https://github.com/linkease/istore.git
