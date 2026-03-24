@@ -55,6 +55,10 @@ echo "[*] 克隆 luci-theme-kucat 主题..."
 git clone --depth=1 https://github.com/sirpdboy/luci-theme-kucat.git package/luci-theme-kucat
 fix_pkg_version package/luci-theme-kucat
 
+echo "[*] 克隆 luci-app-store..."
+git clone --depth=1 https://github.com/linkease/istore.git package/istore
+fix_pkg_version package/istore
+
 echo "[*] 克隆 luci-app-lucky..."
 git clone --depth=1 https://github.com/sirpdboy/luci-app-lucky.git package/lucky
 fix_pkg_version package/lucky
