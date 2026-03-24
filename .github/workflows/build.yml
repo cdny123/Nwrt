@@ -137,7 +137,7 @@ jobs:
         grep '^CONFIG_TARGET' .config
         echo "--------------------------------"
 
-        - name: SSH 远程调试（导入 GitHub 公钥）
+    - name: SSH 远程调试（导入 GitHub 公钥）
       if: github.event.inputs.ssh == 'true'
       run: |
         # 从 GitHub 获取账户的 SSH 公钥并加入授权列表
