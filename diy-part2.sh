@@ -115,13 +115,15 @@ net.ipv4.ip_forward=1
 vm.swappiness=10
 SYS_END
 
-# ---------- 1. 添加 Argon 主题和配置插件 ----------
+# -------------------------------------------------------
+# 默认 Argon 主题和配置插件
+# -------------------------------------------------------
 # 克隆主题（使用 master 分支，适合官方 OpenWrt 24.10+ / main）
 git clone https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
 # 克隆主题配置插件（可选，但强烈推荐）
 git clone https://github.com/jerrykuku/luci-app-argon-config.git package/luci-app-argon-config
 
-# ---------- 2. 设置 Argon 为默认主题 ----------
+# ---------- 设置 Argon 为默认主题 ----------
 # 创建 default-settings 包，确保 Argon 在首次启动时被设为默认主题
 DEFAULT_SETTINGS_DIR="package/default-settings/files"
 mkdir -p "$DEFAULT_SETTINGS_DIR"
