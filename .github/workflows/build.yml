@@ -137,29 +137,7 @@ jobs:
         grep '^CONFIG_TARGET' .config
         echo "--------------------------------"
 
-    - name: SSH 远程调试（导入 GitHub 公钥）
-      if: github.event.inputs.ssh == 'true'
-      run: |
-        # 从 GitHub 获取账户的 SSH 公钥并加入授权列表
-        # 将下面的 YOUR_GITHUB_USERNAME 替换为你的 GitHub 用户名
-        GITHUB_USER=$(echo "$GITHUB_REPOSITORY" | cut -d'/' -f1)
-        echo "[*] 正在导入 GitHub 用户 cdny123 的 SSH 公钥..."
-        mkdir -p ~/.ssh
-        chmod 700 ~/.ssh
-        # 从 GitHub API 获取公钥
-        curl -fsSL "https://github.com/cdny123.keys"           -o /tmp/github_keys.txt 2>/dev/null || true
-        if [ -s /tmp/github_keys.txt ]; then
-          cat /tmp/github_keys.txt >> ~/.ssh/authorized_keys
-          chmod 600 ~/.ssh/authorized_keys
-          echo "[✓] 已导入 $(wc -l < /tmp/github_keys.txt) 个公钥"
-          cat /tmp/github_keys.txt
-        else
-          echo "::warning::未找到 ${GITHUB_USER} 的 SSH 公钥"
-          echo "请先在 GitHub 账号设置中添加 SSH 公钥："
-          echo "https://github.com/settings/keys"
-        fi
-
-    - name: 启动 tmate SSH 会话
+    - name: SSH 远程调试
       uses: mxschmitt/action-tmate@v3
       if: github.event.inputs.ssh == 'true'
       with:
@@ -267,9 +245,9 @@ jobs:
           echo "- 默认账户: root 无密码"
           echo ""
           echo "### 内置插件"
-          echo "luci-theme-kucat / luci-app-netdata / luci-app-lucky"
+          echo "luci-theme-kucat / luci-app-quickstart / luci-app-lucky"
           echo "luci-app-partexp / OpenAppFilter / AdGuardHome"
-          echo "OpenClash"
+          echo "OpenClash / luci-app-netdata"
         } > release.txt
         echo "status=success" >> "$GITHUB_OUTPUT"
 
